@@ -1,3 +1,4 @@
+import io
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -77,6 +78,102 @@ def test_rows_from_before_the_id_column_are_matched_by_name(ledger):
     assert data[0] == HEADERS  # the missing header was added
     assert [r[8] for r in data[1:]] == [None, None, "1", "2"]
     assert data[1][:8] == ["2026-10-20 08:00:00", "小明", "早餐", None, 100.0, 300.0, 300.0, "photos\\a.jpg"]  # untouched
+
+
+# ---- !export: one person's own rows --------------------------------------------------------
+
+def exported(ledger, uploader_id, uploader):
+    result = ledger.export_for(uploader_id, uploader)
+    if result is None:
+        return None
+    data, count = result
+    sheet = load_workbook(io.BytesIO(data)).active
+    return count, [list(r) for r in sheet.iter_rows(values_only=True)]
+
+
+def test_export_contains_only_the_askers_rows_with_no_path_and_no_id(ledger):
+    ledger.append(record(uploader="小明", uploader_id="1", title="麵", kcal=600))
+    ledger.append(record(uploader="小華", uploader_id="2", title="飯", kcal=200))
+    ledger.append(record(when="2026-10-21 08:00:00", uploader="小明", uploader_id="1", title="蛋", kcal=100))
+    count, table = exported(ledger, "1", "小明")
+    assert count == 2
+    assert table[0] == HEADERS[:7]  # no 照片存放位置, no 上傳者ID
+    assert [r[2] for r in table[1:]] == ["麵", "蛋"]  # all of this person's history, not only today
+    assert all(len(r) == 7 for r in table)
+    flat = " ".join(str(c) for r in table for c in r)
+    assert "飯" not in flat and "photos" not in flat and "小華" not in flat
+    assert table[1][4:7] == [500.0, 600.0, 600.0] and table[2][6] == 100.0  # numbers stay numbers
+
+
+def test_export_matches_by_id_so_a_namesake_gets_nothing(ledger):
+    ledger.append(record(uploader="阿明", uploader_id="1", kcal=600))
+    assert exported(ledger, "2", "阿明") is None
+
+
+def test_export_follows_the_person_through_a_rename(ledger):
+    ledger.append(record(uploader="舊暱稱", uploader_id="1", title="一"))
+    ledger.append(record(uploader="新暱稱", uploader_id="1", title="二"))
+    count, table = exported(ledger, "1", "新暱稱")
+    assert count == 2 and [r[2] for r in table[1:]] == ["一", "二"]
+
+
+def test_export_never_hands_out_rows_that_have_no_id_even_to_a_namesake(ledger):
+    # Old rows carry only a display name, and anyone can set their display name to match.
+    old = Workbook()
+    old.active.append(HEADERS[:8])
+    old.active.append(["2026-10-20 08:00:00", "小明", "舊紀錄", "", 100.0, 300.0, 300.0, "photos\\a.jpg"])
+    old.save(ledger.path)
+    assert exported(ledger, "999", "小明") is None  # an impostor with the same name gets nothing
+    ledger.append(record(uploader="小明", uploader_id="1", title="新紀錄"))
+    count, table = exported(ledger, "1", "小明")
+    assert count == 1 and [r[2] for r in table[1:]] == ["新紀錄"]  # the real person gets only id-stamped rows
+
+
+def test_export_without_an_id_exports_nothing(ledger):
+    ledger.append(record(uploader="小明", uploader_id="1"))
+    assert ledger.export_for("", "小明") is None
+
+
+def test_export_with_nothing_logged_is_none(ledger):
+    assert ledger.export_for("1", "小明") is None  # no file at all
+    ledger.append(record(uploader="小華", uploader_id="2"))
+    assert ledger.export_for("1", "小明") is None  # a file, but nothing of this person's
+
+
+@pytest.mark.parametrize("evil", ["=1+1", '=HYPERLINK("http://evil.example","x")', "+cmd", "-2", "@SUM(1)"])
+def test_export_never_contains_a_formula(ledger, evil):
+    ledger.append(record(uploader=evil, uploader_id="1", title=evil, ingredients=evil))
+    # a hand-typed "number" that is really text must not turn into a formula either
+    workbook = load_workbook(ledger.path)
+    workbook.active.cell(row=2, column=5, value="x")
+    workbook.active.cell(row=2, column=5).data_type = "s"
+    workbook.active.cell(row=2, column=6, value="'" + evil)
+    workbook.save(ledger.path)
+    data, _ = ledger.export_for("1", evil)
+    sheet = load_workbook(io.BytesIO(data)).active
+    for column in range(1, 8):
+        assert sheet.cell(row=2, column=column).data_type != "f", f"column {column}"
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        assert b"<f>" not in archive.read("xl/worksheets/sheet1.xml")
+
+
+def test_export_does_not_touch_the_real_log(ledger):
+    ledger.append(record())
+    before = ledger.path.read_bytes()
+    ledger.export_for("1001", "小明")
+    assert ledger.path.read_bytes() == before
+    assert not ledger.path.with_name(ledger.path.name + ".tmp").exists()
+
+
+def test_a_locked_log_is_reported_not_crashed(ledger, monkeypatch):
+    ledger.append(record())
+
+    def locked(_path):
+        raise PermissionError("locked")
+
+    monkeypatch.setattr(ledger_module, "load_workbook", locked)
+    with pytest.raises(LedgerBusy):
+        ledger.export_for("1001", "小明")
 
 
 def test_a_19_digit_id_is_stored_without_losing_digits(ledger):

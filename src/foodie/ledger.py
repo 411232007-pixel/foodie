@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import io
 import logging
 import os
 import threading
@@ -32,6 +33,8 @@ HEADERS = [
 ]
 COL_WHEN, COL_UPLOADER, COL_TITLE, COL_INGREDIENTS, COL_WEIGHT, COL_CALORIES, COL_DAILY, COL_PHOTO, COL_UPLOADER_ID = range(1, 10)
 COLUMN_WIDTHS = [20, 16, 22, 36, 12, 12, 22, 60, 22]
+EXPORT_HEADERS = HEADERS[:7]  # no photo path (a path on this computer) and no id
+EXPORT_NUMBER_COLUMNS = {COL_WEIGHT, COL_CALORIES, COL_DAILY}
 FORMULA_STARTERS = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
@@ -116,14 +119,49 @@ class Ledger:
                 when = when.strftime("%Y-%m-%d %H:%M:%S")
             if not (isinstance(when, str) and when.startswith(day) and _is_number(calories)):
                 continue
-            row_id = row[COL_UPLOADER_ID - 1] if len(row) >= COL_UPLOADER_ID else None
-            if uploader_id and row_id not in (None, ""):
-                mine = str(row_id).strip() == uploader_id
-            else:
-                mine = row[COL_UPLOADER - 1] == uploader
-            if mine:
+            if _is_mine(row, uploader_id, uploader):
                 total += calories
         return total
+
+    def export_for(self, uploader_id: str, uploader: str) -> tuple[bytes, int] | None:
+        """Everything one person has logged, as a brand-new .xlsx (bytes) plus the row count.
+
+        Only rows carrying that person's Discord id go in (old rows without an id are never exported,
+        see _is_mine), without the photo path (it is a path on this computer) and without the id column.
+        Returns None when the person has no rows. The real log is never touched.
+        """
+        with self._lock:
+            if not self.path.exists():
+                return None
+            try:
+                sheet = load_workbook(self.path).active
+                mine = [
+                    row
+                    for row in sheet.iter_rows(min_row=2, values_only=True)
+                    if uploader_id and _is_mine(row, uploader_id, uploader, name_fallback=False)
+                ]
+            except PermissionError as exc:
+                raise LedgerBusy(str(exc)) from exc
+        if not mine:
+            return None
+
+        out = Workbook()
+        target = out.active
+        target.title = "我的紀錄"
+        target.append(EXPORT_HEADERS)
+        for index, width in enumerate(COLUMN_WIDTHS[: len(EXPORT_HEADERS)], start=1):
+            target.column_dimensions[chr(64 + index)].width = width
+        for source in mine:
+            row = target.max_row + 1
+            for column in range(1, len(EXPORT_HEADERS) + 1):
+                value = source[column - 1] if len(source) >= column else None
+                if column in EXPORT_NUMBER_COLUMNS and _is_number(value):
+                    target.cell(row=row, column=column, value=value)
+                else:  # every other cell, including a hand-typed "number" that is really text, goes through 防護 4
+                    _put_text(target, row, column, "" if value is None else str(value))
+        buffer = io.BytesIO()
+        out.save(buffer)
+        return buffer.getvalue(), len(mine)
 
     def _save_atomic(self, workbook: Workbook) -> None:
         """Save next to the real file first, then swap: a crash mid-save cannot damage old records."""
@@ -140,6 +178,19 @@ class Ledger:
 
 def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _is_mine(row: tuple, uploader_id: str, uploader: str, *, name_fallback: bool = True) -> bool:
+    """Does this log row belong to this person? By Discord id.
+
+    Rows written before the id column existed have no id. For adding up a day's calories those are
+    matched by display name (name_fallback=True): the worst case is a wrong number. For handing a file
+    to someone (export) the name is NOT trusted, because anyone can set their display name to match
+    another person's; there only the unforgeable id counts."""
+    row_id = row[COL_UPLOADER_ID - 1] if len(row) >= COL_UPLOADER_ID else None
+    if uploader_id and row_id not in (None, ""):
+        return str(row_id).strip() == uploader_id
+    return name_fallback and row[COL_UPLOADER - 1] == uploader
 
 
 def _put_text(sheet: Worksheet, row: int, column: int, value: str) -> None:

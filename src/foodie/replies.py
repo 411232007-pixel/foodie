@@ -12,7 +12,15 @@ LEDGER_BUSY_TEXT = "紀錄檔暫時寫不進去(可能正開著 Excel)，請關�
 TOO_BIG_TEXT = "圖片太大了(上限 8 MB)，請縮小後再傳"
 BUSY_TEXT = "目前太忙，請稍後再傳"
 TOO_FAST_TEXT = "你傳得太頻繁了，請稍等一下再傳"
+EXPORT_EMPTY_TEXT = "你還沒有任何紀錄，先傳一張食物照片吧"
+EXPORT_TOO_FAST_TEXT = "匯出太頻繁了，請等一分鐘再試"
+EXPORT_FAILED_TEXT = "匯出失敗，請稍後再試"
+EXPORT_NO_PERMISSION_TEXT = "我沒有傳送檔案的權限(需要 Attach Files)，請通知管理員重新授權"
 DISCORD_LIMIT = 1900  # Discord refuses messages over 2000 characters
+
+
+def export_text(count: int) -> str:
+    return f"這是你的全部紀錄，共 {count} 筆。檔案裡只有你自己的資料，沒有照片。"
 
 
 def number(value: float) -> str:

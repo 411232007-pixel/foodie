@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 
 import discord
 
 from foodie import replies
 from foodie.config import (
+    EXPORT_COMMAND,
+    EXPORT_RATE_LIMIT,
+    EXPORT_RATE_WINDOW_SECONDS,
     MAX_IMAGE_BYTES,
     MAX_IMAGES_PER_MESSAGE,
     MAX_QUEUE_JOBS,
@@ -70,6 +75,7 @@ class FoodieBot(discord.Client):
         self.ledger = ledger
         self.queue: asyncio.Queue[Job] = asyncio.Queue(maxsize=MAX_QUEUE_JOBS)
         self.limiter = RateLimiter(RATE_LIMIT_PHOTOS, RATE_LIMIT_WINDOW_SECONDS)
+        self.export_limiter = RateLimiter(EXPORT_RATE_LIMIT, EXPORT_RATE_WINDOW_SECONDS)
         self._worker: asyncio.Task | None = None
         self._current: Job | None = None  # the job being worked on right now
         self._warned_reaction = False
@@ -103,7 +109,9 @@ class FoodieBot(discord.Client):
             return
         images = [a for a in message.attachments if is_image(a)]
         if not images:
-            return
+            if (message.content or "").strip().lower() == EXPORT_COMMAND:
+                await self._export(message)
+            return  # anything else without a photo is ignored
 
         if self.queue.full():
             await self._reply(message, replies.BUSY_TEXT)
@@ -131,6 +139,39 @@ class FoodieBot(discord.Client):
                 await self._unreact(job.message)  # ⏳ must never stay behind
                 self._current = None
                 self.queue.task_done()
+
+    async def _export(self, message: discord.Message) -> None:
+        """`!export`: send the person who asked everything they have logged, and only theirs."""
+        if not self.export_limiter.allow(message.author.id, 1):
+            await self._reply(message, replies.EXPORT_TOO_FAST_TEXT)
+            return
+        try:
+            result = await asyncio.to_thread(self.ledger.export_for, str(message.author.id), message.author.display_name)
+        except Exception:
+            log.exception("匯出時讀取紀錄失敗")
+            await self._reply(message, replies.EXPORT_FAILED_TEXT)
+            return
+        if result is None:
+            await self._reply(message, replies.EXPORT_EMPTY_TEXT)
+            return
+
+        data, count = result
+        name = f"foodie-{datetime.now():%Y-%m-%d}.xlsx"
+        try:
+            await message.reply(
+                replies.export_text(count),
+                file=discord.File(io.BytesIO(data), filename=name),
+                allowed_mentions=REPLY_MENTIONS,
+                mention_author=True,
+            )
+        except discord.Forbidden:
+            log.warning("沒有 Attach Files 權限,傳不了匯出檔。請照 docs/discord-bot-setup.md 重新授權 bot。")
+            await self._reply(message, replies.EXPORT_NO_PERMISSION_TEXT)
+        except Exception as exc:
+            log.warning("傳送匯出檔失敗:%s", exc)
+            await self._reply(message, replies.EXPORT_FAILED_TEXT)
+        else:
+            log.info("已把 %s 的 %d 筆紀錄匯出給本人", message.author.display_name, count)
 
     async def _handle(self, job: Job) -> None:
         uploader = job.message.author.display_name

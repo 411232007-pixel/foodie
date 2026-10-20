@@ -102,7 +102,7 @@ Discord 預設不讓機器人看「訊息的內容」,也就是**看不到訊息
 
 ## 四、選權限,並把 bot 邀進你的 Server
 
-### 這個 agent 需要的權限(只要四個)
+### 這個 agent 需要的權限(只要五個)
 
 | 權限(英文) | 中文意思 | 數值 | 為什麼需要 |
 |---|---|---|---|
@@ -110,12 +110,17 @@ Discord 預設不讓機器人看「訊息的內容」,也就是**看不到訊息
 | **Send Messages** | 傳送訊息 | 2048 | 回覆分析結果 |
 | **Add Reactions** | 新增反應 | 64 | 收到照片時,在那則訊息上加 ⏳ 表示「收到了,排隊中」;處理完會把 ⏳ 拿掉 |
 | **Read Message History** | 讀取訊息歷史 | 65536 | 回覆某一則訊息、對舊訊息加反應時,Discord 要求要有這個權限 |
+| **Attach Files** | 附加檔案 | 32768 | 有人輸入 `!export` 時,把他自己的紀錄 Excel 附在回覆上傳給他 |
 
-四個加起來是 **68672**。
+五個加起來是 **101440**。(舊版只有前四個,是 68672。)
 
 **不要**勾 Administrator(管理員)或其他權限。權限越少,萬一出事損害越小。
 
 **沒有 Add Reactions 會怎樣**:程式不會當掉,照樣分析、記錄、回覆,只是看不到 ⏳,終端機會印一次警告。所以它是「體驗用」的權限,但需求要求有 ⏳,所以請授權。
+
+**沒有 Attach Files 會怎樣**:照片分析完全不受影響。只有 `!export` 傳不出檔案,bot 會回一句「我沒有傳送檔案的權限(需要 Attach Files)」,終端機也會警告。
+
+> 注意:新 Server 的 `@everyone` 預設就允許傳檔案,所以就算 bot 自己的角色沒有 Attach Files,在 `#food-log` 裡通常也傳得出去。但這是靠 Server 的預設值,不是 bot 自己的權限;預設值一旦被收緊就會壞掉。所以還是請用 `101440` 重新授權,讓 bot 自己的角色明確擁有它。
 
 > 機器人「把自己加的 ⏳ 拿掉」「回覆訊息」不需要額外的管理權限,不要勾 Manage Messages。
 
@@ -126,29 +131,30 @@ Discord 預設不讓機器人看「訊息的內容」,也就是**看不到訊息
 3. 在「**Scopes**」(範圍)裡,只勾 **`bot`**。
    - 勾了之後,下面會多出一個「**Bot Permissions**」(機器人權限)區塊。
    - **不要**勾 `applications.commands`,這個 agent 不用斜線指令。
-4. 在「**Bot Permissions**」裡,只勾這四個:
+4. 在「**Bot Permissions**」裡,只勾這五個:
    - ☑ **View Channels**(在 General Permissions 底下)
    - ☑ **Send Messages**(在 Text Permissions 底下)
    - ☑ **Add Reactions**(在 Text Permissions 底下)
+   - ☑ **Attach Files**(在 Text Permissions 底下)
    - ☑ **Read Message History**(在 Text Permissions 底下)
 5. 如果頁面有「**Integration Type**」,選 **Guild Install**。
 6. 往最下面捲,看到「**Generated URL**」,點旁邊的 **「Copy」**。
 
-> 做個核對:這四個權限加起來的「權限數字」是 `68672`。生成的網址裡會有 `permissions=68672`。如果不是,回去檢查勾了哪些。
+> 做個核對:這五個權限加起來的「權限數字」是 `101440`。生成的網址裡會有 `permissions=101440`。如果不是,回去檢查勾了哪些。
 
 ### 也可以自己組連結(已經建好 application 時比較快)
 
 把下面網址裡的 `<APPLICATION_ID>` 換成你的 Application ID(Developer Portal → 你的 application → **General Information** → **Application ID**,是一串 18~19 位的數字,不是機密):
 
 ```
-https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permissions=68672
+https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permissions=101440
 ```
 
 ### 之前已經邀請過 bot,現在要補權限(重新授權)
 
-不用把 bot 踢掉再加。用上面的連結(`permissions=68672`)再走一次「邀進你的 Server」的步驟,選同一個 Server,Discord 會把權限更新成這四個。做完後到 Server 設定 → 身分組 → 找到 Foodie 的身分組,確認四個權限都有打勾。
+不用把 bot 踢掉再加。用上面的連結(`permissions=101440`)再走一次「邀進你的 Server」的步驟,選同一個 Server,Discord 會把權限更新成這五個。做完後到 Server 設定 → 身分組 → 找到 Foodie 的身分組,確認五個權限都有打勾。
 
-如果 `#food-log` 頻道自己有設定權限覆蓋(頻道設定 → 權限),要確認沒有把 Foodie 的 **Add Reactions** 設成禁止(❌)。
+如果 `#food-log` 頻道自己有設定權限覆蓋(頻道設定 → 權限),要確認沒有把 Foodie 的 **Add Reactions** 或 **Attach Files** 設成禁止(❌)。
 
 ### 邀進你的 Server
 
@@ -159,7 +165,7 @@ https://discord.com/oauth2/authorize?client_id=<APPLICATION_ID>&scope=bot&permis
 3. 畫面會問「**Add to server**」。點下拉選單,選**你自己的 Server**(例如「Foodie 測試」)。
    - 如果下拉選單裡沒有你的 Server,表示你登入的帳號不是這個 Server 的擁有者或沒有「管理伺服器」權限,換回建立 Server 的那個帳號。
 4. 點 **「繼續」(Continue)**。
-5. 看一遍它列出的權限,應該只有那四個,點 **「授權」(Authorize)**。
+5. 看一遍它列出的權限,應該只有那五個,點 **「授權」(Authorize)**。
 6. 若出現「我不是機器人」驗證,照著做。
 7. 看到「**已授權**」(Authorized)就完成了。
 
@@ -225,7 +231,7 @@ DATA_DIR=D:\foodie-data
 - [ ] Developer Portal 有一個 application(例如 `Foodie`)
 - [ ] **Public Bot** 已關閉
 - [ ] **Message Content Intent** 已打開,且已按 Save Changes
-- [ ] 邀請網址只勾了 `bot` 與 View Channels / Send Messages / Add Reactions / Read Message History,網址含 `permissions=68672`
+- [ ] 邀請網址只勾了 `bot` 與 View Channels / Send Messages / Add Reactions / Attach Files / Read Message History,網址含 `permissions=101440`
 - [ ] 你的 Server 成員清單看得到 Foodie(離線,有 BOT 標籤)
 - [ ] 專案資料夾有 `.env`,裡面有四個項目,檔名不是 `.env.txt`
 - [ ] `git status` 看不到 `.env`
@@ -238,7 +244,8 @@ DATA_DIR=D:\foodie-data
 | 邀請網址打開後,下拉選單沒有我的 Server | 你登入的 Discord 帳號不是 Server 擁有者,換成建立 Server 的帳號 |
 | 之後程式啟動,bot 在線但傳照片沒反應 | 99% 是 Message Content Intent 沒打開、或沒按 Save Changes。回到第二節檢查 |
 | 之後程式啟動,出現「Message Content Intent 沒打開」 | 同上。程式會直接退出並告訴你這句話,不是壞掉 |
-| 傳照片後沒有 ⏳,但有分析結果 | 少了 Add Reactions 權限(或頻道把它禁止了)。用 `permissions=68672` 的連結重新授權 |
+| 傳照片後沒有 ⏳,但有分析結果 | 少了 Add Reactions 權限(或頻道把它禁止了)。用 `permissions=101440` 的連結重新授權 |
+| 輸入 `!export` 後 bot 回「我沒有傳送檔案的權限」 | 少了 Attach Files 權限(或頻道把它禁止了)。用 `permissions=101440` 的連結重新授權 |
 | ⏳ 一直不消失 | 正常情況下處理完或失敗都會拿掉。如果是程式被強制關閉(例如斷電、直接關視窗)時還在排隊的訊息,⏳ 會留著,手動點掉即可 |
 | 之後程式啟動,出現 `Improper token` 或登入失敗 | token 複製不完整、前後多了空白、或已經被 Reset 過。重新 Reset Token 取一個新的,貼進 `.env` |
 | bot 在線,但不在 `#food-log` 回覆 | 檢查 `CHANNEL_ID` 是不是 `#food-log` 的 ID(不是 Server 的 ID);bot 的權限被頻道設定擋住也會這樣 |

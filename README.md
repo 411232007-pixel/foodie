@@ -16,7 +16,7 @@
 ## 第一次使用
 
 1. 照 [docs/discord-server-setup.md](docs/discord-server-setup.md) 建 Server、`#food-log` 頻道、取得 `CHANNEL_ID`。
-2. 照 [docs/discord-bot-setup.md](docs/discord-bot-setup.md) 建 bot、取得 token、邀進 Server。邀請連結的權限數字要是 **`68672`**(含 Add Reactions,用來顯示 ⏳)。
+2. 照 [docs/discord-bot-setup.md](docs/discord-bot-setup.md) 建 bot、取得 token、邀進 Server。邀請連結的權限數字要是 **`101440`**(含 Add Reactions 用來顯示 ⏳,以及 Attach Files 用來讓 `!export` 傳檔案)。
 3. 到 Developer Portal → 你的 application → **Bot** → 打開 **MESSAGE CONTENT INTENT** → 按 **Save Changes**。沒開的話程式會直接退出並告訴你這件事。
 4. 在專案資料夾建 `.env`(範本是 `.env.example`),填四個項目:
 
@@ -66,9 +66,21 @@ uv run python -m foodie
 | 一個馬克杯(不是食物) | 回覆「你傳的不是食物,是馬克杯。」並列出重量 0、熱量 0;Excel「食物敘述」寫「不是食物」、「成份」寫「馬克杯」;照片照樣存;當日總熱量不變 |
 | 一則訊息附 2~3 張照片 | 一張一張處理,最後一則合併回覆 |
 | 很模糊/全黑的照片 | 「照片看不清楚，請重拍一張」,不記錄、不存照片 |
-| 純文字、PDF、影片 | 完全沒反應 |
+| 輸入 `!export` | 回覆你自己的紀錄 Excel(見下一節);還沒有紀錄時回「你還沒有任何紀錄」 |
+| 其他純文字、PDF、影片 | 完全沒反應 |
 | 別的頻道傳照片 | 完全沒反應 |
 | 同一秒傳兩張同名食物 | 檔名第二張尾巴加 `-2` |
+
+## 匯出自己的紀錄:`!export`
+
+任何人在 `#food-log` 輸入 **`!export`**(只輸入這一個詞),bot 會回覆那則訊息,附上一份 `foodie-日期.xlsx`,裡面是**你自己**的全部歷史紀錄:
+
+- 只有你的資料(用 Discord 使用者 ID 比對,別人的列不會出現),沒有照片,也沒有你電腦上的檔案路徑。
+- 欄位:日期時間、上傳者、食物敘述、成份、重量、熱量、當日已攝取熱量。
+- 這是一份新檔案,不會動到原本的 `food_log.xlsx`;不花 Claude 額度;同一個人 60 秒內只能匯出一次。
+- 需要 bot 有 **Attach Files** 權限(用 `permissions=101440` 的連結授權)。
+- **注意**:檔案是回覆在頻道裡,能看到 `#food-log` 的人都能下載。
+- 這個版本以前建立的舊紀錄(沒有「上傳者ID」)**不會被匯出給任何人**,因為只有顯示名稱,任何人都能改名冒充。要納入,請在 Excel 的第 9 欄手動填上對方的 Discord ID。
 
 **當日已攝取熱量是「每個人各算各的」**:用 Discord 使用者 ID 分人(改暱稱、或兩個人暱稱一樣都不會算混),所以小明的回覆只加總小明今天吃的。每天午夜 00:00(你電腦的時間)歸零重算。這個版本以前的舊紀錄沒有 ID,會暫時用「上傳者」欄的名稱比對。
 
@@ -96,7 +108,7 @@ $env:FOODIE_LIVE="1"; uv run pytest tests/test_live_isolation.py -s; Remove-Item
 | 防護 1 | `claude -p` 在只放這一張照片的暫存資料夾裡執行,只給讀檔工具 | `src/foodie/analyzer.py` | `build_command` | 83–91 |
 | 防護 2 | 上傳者打的字放進有隨機分隔線的「資料區」,不接進指令 | `src/foodie/analyzer.py` | `build_task` | 106–117 |
 | 防護 3 | 食物名稱變檔名前清掉路徑字元,並確認最後路徑仍在 `photos` 裡 | `src/foodie/photo_store.py` | `candidate_path` | 43–54 |
-| 防護 4 | 寫進 Excel 的文字一律存成純文字,不當公式 | `src/foodie/ledger.py` | `_put_text` | 151–157 |
+| 防護 4 | 寫進 Excel 的文字一律存成純文字,不當公式 | `src/foodie/ledger.py` | `_put_text` | 202–208 |
 
 行號會隨程式修改而位移,用函式名稱或這個指令找最準:
 
