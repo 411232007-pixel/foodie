@@ -205,6 +205,12 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Foodie runtime data (DATA_DIR): meal photos and the Excel log are private.
+# DATA_DIR should live outside the repo; these cover it if placed inside.
+data/
+photos/
+food_log.xlsx
+
 # Ruff stuff:
 .ruff_cache/
 
