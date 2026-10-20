@@ -134,12 +134,13 @@ class FoodieBot(discord.Client):
 
     async def _handle(self, job: Job) -> None:
         uploader = job.message.author.display_name
+        uploader_id = str(job.message.author.id)
         results: list[PhotoResult] = []
         for attachment in job.attachments:  # in order, so each row's daily total builds on the last
-            results.append(await self._one_photo(attachment, uploader, job.caption))
+            results.append(await self._one_photo(attachment, uploader, uploader_id, job.caption))
         await self._reply(job.message, replies.build_reply(results, job.skipped))
 
-    async def _one_photo(self, attachment: discord.Attachment, uploader: str, caption: str) -> PhotoResult:
+    async def _one_photo(self, attachment: discord.Attachment, uploader: str, uploader_id: str, caption: str) -> PhotoResult:
         if attachment.size > MAX_IMAGE_BYTES:
             return PhotoResult("too_big")
         try:
@@ -148,7 +149,7 @@ class FoodieBot(discord.Client):
             log.warning("下載圖片失敗:%s(%s)", attachment.filename, exc)
             return PhotoResult("failed")
         try:
-            return await asyncio.to_thread(process_image, self.cfg, self.ledger, data, uploader, caption)
+            return await asyncio.to_thread(process_image, self.cfg, self.ledger, data, uploader, uploader_id, caption)
         except Exception:
             log.exception("處理一張照片時發生意外(其他張照片不受影響)")
             return PhotoResult("failed")

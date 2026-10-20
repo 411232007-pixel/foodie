@@ -28,9 +28,10 @@ HEADERS = [
     "熱量(大卡)",
     "當日已攝取熱量(大卡)",
     "照片存放位置",
+    "上傳者ID",  # last on purpose: the eight required columns keep their positions
 ]
-COL_WHEN, COL_UPLOADER, COL_TITLE, COL_INGREDIENTS, COL_WEIGHT, COL_CALORIES, COL_DAILY, COL_PHOTO = range(1, 9)
-COLUMN_WIDTHS = [20, 16, 22, 36, 12, 12, 22, 60]
+COL_WHEN, COL_UPLOADER, COL_TITLE, COL_INGREDIENTS, COL_WEIGHT, COL_CALORIES, COL_DAILY, COL_PHOTO, COL_UPLOADER_ID = range(1, 10)
+COLUMN_WIDTHS = [20, 16, 22, 36, 12, 12, 22, 60, 22]
 FORMULA_STARTERS = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
@@ -41,7 +42,8 @@ class LedgerBusy(Exception):
 @dataclass(frozen=True)
 class LogRecord:
     when: datetime
-    uploader: str
+    uploader: str  # display name: shown to people, can change or repeat
+    uploader_id: str  # Discord user id: never changes, so the daily total is kept per person by this
     title: str
     ingredients: str
     weight_g: float
@@ -56,7 +58,7 @@ class Ledger:
         self._lock = threading.Lock()
 
     def append(self, record: LogRecord) -> float:
-        """Add one row at the bottom. Returns the day's total (all uploaders together)."""
+        """Add one row at the bottom. Returns today's total for THIS uploader only."""
         with self._lock:
             for attempt in range(1, LEDGER_RETRIES + 1):
                 try:
@@ -75,6 +77,9 @@ class Ledger:
         if self.path.exists():
             workbook = load_workbook(self.path)  # an unreadable file raises: we never start over on top of it
             sheet = workbook.active
+            if sheet.cell(row=1, column=COL_UPLOADER_ID).value is None:  # a log from before the ID column existed
+                sheet.cell(row=1, column=COL_UPLOADER_ID, value=HEADERS[COL_UPLOADER_ID - 1])
+                sheet.column_dimensions[chr(64 + COL_UPLOADER_ID)].width = COLUMN_WIDTHS[COL_UPLOADER_ID - 1]
         else:
             workbook = Workbook()
             sheet = workbook.active
@@ -84,7 +89,7 @@ class Ledger:
                 sheet.column_dimensions[chr(64 + index)].width = width
 
         today = record.when.strftime("%Y-%m-%d")
-        daily_total = round(self._calories_on(sheet, today) + record.calories_kcal, 1)
+        daily_total = round(self._calories_on(sheet, today, record.uploader_id, record.uploader) + record.calories_kcal, 1)
 
         row = sheet.max_row + 1
         _put_text(sheet, row, COL_WHEN, record.when.strftime("%Y-%m-%d %H:%M:%S"))
@@ -95,18 +100,28 @@ class Ledger:
         sheet.cell(row=row, column=COL_CALORIES, value=round(record.calories_kcal, 1))
         sheet.cell(row=row, column=COL_DAILY, value=daily_total)
         _put_text(sheet, row, COL_PHOTO, record.photo_path)
+        _put_text(sheet, row, COL_UPLOADER_ID, record.uploader_id)  # as text: a 19-digit id would lose digits as a number
 
         self._save_atomic(workbook)
         return daily_total
 
     @staticmethod
-    def _calories_on(sheet: Worksheet, day: str) -> float:
+    def _calories_on(sheet: Worksheet, day: str, uploader_id: str, uploader: str) -> float:
+        """Today's calories for one person. Rows are matched by Discord id; rows written before the
+        id column existed have no id, so those fall back to matching the display name."""
         total = 0.0
         for row in sheet.iter_rows(min_row=2, values_only=True):
             when, calories = row[COL_WHEN - 1], row[COL_CALORIES - 1]
             if isinstance(when, datetime):  # Excel turns a retyped date cell into a real date
                 when = when.strftime("%Y-%m-%d %H:%M:%S")
-            if isinstance(when, str) and when.startswith(day) and _is_number(calories):
+            if not (isinstance(when, str) and when.startswith(day) and _is_number(calories)):
+                continue
+            row_id = row[COL_UPLOADER_ID - 1] if len(row) >= COL_UPLOADER_ID else None
+            if uploader_id and row_id not in (None, ""):
+                mine = str(row_id).strip() == uploader_id
+            else:
+                mine = row[COL_UPLOADER - 1] == uploader
+            if mine:
                 total += calories
         return total
 

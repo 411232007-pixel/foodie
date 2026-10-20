@@ -3,16 +3,17 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 import foodie.ledger as ledger_module
 from foodie.ledger import HEADERS, Ledger, LedgerBusy, LogRecord
 
 
-def record(when="2026-10-20 12:00:00", uploader="小明", title="牛肉麵", kcal=650.0, **kw) -> LogRecord:
+def record(when="2026-10-20 12:00:00", uploader="小明", uploader_id="1001", title="牛肉麵", kcal=650.0, **kw) -> LogRecord:
     defaults = dict(
         when=datetime.fromisoformat(when),
         uploader=uploader,
+        uploader_id=uploader_id,
         title=title,
         ingredients="牛肉、麵條",
         weight_g=500.0,
@@ -32,6 +33,7 @@ def test_first_write_creates_file_with_headers(ledger):
     data = rows(ledger)
     assert data[0] == HEADERS
     assert data[1][:8] == ["2026-10-20 12:00:00", "小明", "牛肉麵", "牛肉、麵條", 500.0, 650.0, 650.0, "photos\\x.jpg"]
+    assert data[1][8] == "1001"  # the id sits in a 9th column so the 8 required columns keep their places
 
 
 def test_rows_are_added_at_the_bottom_never_overwritten(ledger):
@@ -42,11 +44,44 @@ def test_rows_are_added_at_the_bottom_never_overwritten(ledger):
     assert [r[2] for r in rows(ledger)[1:]] == ["一", "二", "三"]
 
 
-def test_daily_total_adds_everyone_in_the_channel_for_that_day(ledger):
-    assert ledger.append(record(uploader="小明", kcal=600)) == 600
-    assert ledger.append(record(uploader="小華", kcal=250.5)) == 850.5
-    assert ledger.append(record(uploader="小明", kcal=0, title="不是食物")) == 850.5
-    assert [r[6] for r in rows(ledger)[1:]] == [600, 850.5, 850.5]
+def test_daily_total_is_kept_per_person(ledger):
+    assert ledger.append(record(uploader="小明", uploader_id="1", kcal=600)) == 600
+    assert ledger.append(record(uploader="小華", uploader_id="2", kcal=250.5)) == 250.5  # not 850.5
+    assert ledger.append(record(uploader="小明", uploader_id="1", kcal=100)) == 700
+    assert ledger.append(record(uploader="小明", uploader_id="1", kcal=0, title="不是食物")) == 700
+    assert ledger.append(record(uploader="小華", uploader_id="2", kcal=50)) == 300.5
+    assert [r[6] for r in rows(ledger)[1:]] == [600, 250.5, 700, 700, 300.5]
+
+
+def test_two_people_with_the_same_display_name_are_not_mixed_up(ledger):
+    ledger.append(record(uploader="阿明", uploader_id="1", kcal=600))
+    assert ledger.append(record(uploader="阿明", uploader_id="2", kcal=200)) == 200
+
+
+def test_renaming_does_not_lose_the_days_total(ledger):
+    ledger.append(record(uploader="舊暱稱", uploader_id="1", kcal=600))
+    assert ledger.append(record(uploader="新暱稱", uploader_id="1", kcal=100)) == 700
+
+
+def test_rows_from_before_the_id_column_are_matched_by_name(ledger):
+    # A log made by the earlier version: eight columns, no id, header without 上傳者ID.
+    old = Workbook()
+    sheet = old.active
+    sheet.append(HEADERS[:8])
+    sheet.append(["2026-10-20 08:00:00", "小明", "早餐", "", 100.0, 300.0, 300.0, "photos\\a.jpg"])
+    sheet.append(["2026-10-20 09:00:00", "小華", "早餐", "", 100.0, 500.0, 800.0, "photos\\b.jpg"])
+    old.save(ledger.path)
+    assert ledger.append(record(uploader="小明", uploader_id="1", kcal=100)) == 400
+    assert ledger.append(record(uploader="小華", uploader_id="2", kcal=10)) == 510
+    data = rows(ledger)
+    assert data[0] == HEADERS  # the missing header was added
+    assert [r[8] for r in data[1:]] == [None, None, "1", "2"]
+    assert data[1][:8] == ["2026-10-20 08:00:00", "小明", "早餐", None, 100.0, 300.0, 300.0, "photos\\a.jpg"]  # untouched
+
+
+def test_a_19_digit_id_is_stored_without_losing_digits(ledger):
+    ledger.append(record(uploader_id="1562019939534110794"))
+    assert rows(ledger)[1][8] == "1562019939534110794"
 
 
 def test_daily_total_restarts_at_midnight(ledger):

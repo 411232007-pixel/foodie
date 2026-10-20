@@ -53,10 +53,10 @@ uv run python -m foodie
    成份:牛肉、麵條、青菜、湯
    重量:約 500 公克
    熱量:約 650 大卡
-   今日已攝取熱量(全頻道累計):約 650 大卡
+   你今天已攝取熱量:約 650 大卡
    ```
 3. `DATA_DIR` 裡多了:
-   - `food_log.xlsx` 新增一列(8 個欄位)
+   - `food_log.xlsx` 新增一列(你要求的 8 個欄位,最後多一欄「上傳者ID」)
    - `photos\2026-10-20 15-17-03 牛肉麵.jpg`
 
 其他測試:
@@ -70,7 +70,7 @@ uv run python -m foodie
 | 別的頻道傳照片 | 完全沒反應 |
 | 同一秒傳兩張同名食物 | 檔名第二張尾巴加 `-2` |
 
-**當日已攝取熱量是「整個頻道所有人加總」**,不是每個人各算各的;每天午夜 00:00(你電腦的時間)歸零重算。
+**當日已攝取熱量是「每個人各算各的」**:用 Discord 使用者 ID 分人(改暱稱、或兩個人暱稱一樣都不會算混),所以小明的回覆只加總小明今天吃的。每天午夜 00:00(你電腦的時間)歸零重算。這個版本以前的舊紀錄沒有 ID,會暫時用「上傳者」欄的名稱比對。
 
 ## 測試
 
@@ -96,7 +96,7 @@ $env:FOODIE_LIVE="1"; uv run pytest tests/test_live_isolation.py -s; Remove-Item
 | 防護 1 | `claude -p` 在只放這一張照片的暫存資料夾裡執行,只給讀檔工具 | `src/foodie/analyzer.py` | `build_command` | 83–91 |
 | 防護 2 | 上傳者打的字放進有隨機分隔線的「資料區」,不接進指令 | `src/foodie/analyzer.py` | `build_task` | 106–117 |
 | 防護 3 | 食物名稱變檔名前清掉路徑字元,並確認最後路徑仍在 `photos` 裡 | `src/foodie/photo_store.py` | `candidate_path` | 43–54 |
-| 防護 4 | 寫進 Excel 的文字一律存成純文字,不當公式 | `src/foodie/ledger.py` | `_put_text` | 136–142 |
+| 防護 4 | 寫進 Excel 的文字一律存成純文字,不當公式 | `src/foodie/ledger.py` | `_put_text` | 151–157 |
 
 行號會隨程式修改而位移,用函式名稱或這個指令找最準:
 

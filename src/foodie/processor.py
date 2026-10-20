@@ -37,6 +37,7 @@ def process_image(
     ledger: Ledger,
     data: bytes,
     uploader: str,
+    uploader_id: str,
     caption: str,
     now: datetime | None = None,
     analyze_fn: Callable[..., FoodResult] = analyze,
@@ -79,6 +80,7 @@ def process_image(
     record = LogRecord(
         when=now,
         uploader=uploader,
+        uploader_id=uploader_id,
         title=title,
         ingredients=ingredients,
         weight_g=weight,

@@ -20,7 +20,7 @@ def number(value: float) -> str:
 
 
 def total_line(total: float) -> str:
-    return f"今日已攝取熱量(全頻道累計):約 {number(total)} 大卡"
+    return f"你今天已攝取熱量:約 {number(total)} 大卡"
 
 
 def failure_text(result: PhotoResult) -> str:

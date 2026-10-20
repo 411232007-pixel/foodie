@@ -17,13 +17,13 @@ def food(**kw) -> FoodResult:
     return FoodResult(**{**base, **kw})
 
 
-def run(cfg, ledger, result=None, error=None, data=JPEG, uploader="小明"):
+def run(cfg, ledger, result=None, error=None, data=JPEG, uploader="小明", uploader_id="1"):
     def fake_analyze(_cfg, _data, _ext, _caption):
         if error:
             raise error
         return result
 
-    return process_image(cfg, ledger, data, uploader, "", now=NOW, analyze_fn=fake_analyze)
+    return process_image(cfg, ledger, data, uploader, uploader_id, "", now=NOW, analyze_fn=fake_analyze)
 
 
 def sheet_rows(cfg):
@@ -46,7 +46,7 @@ def test_not_food_is_recorded_too_with_zero_numbers(cfg, ledger):
     assert row[2:7] == ["不是食物", "馬克杯", 0.0, 0.0, 0.0]
     assert (cfg.data_dir / row[7]).name == "2026-10-20 12-00-00 不是食物.jpg"
     reply = build_reply([result])
-    for part in ("你傳的不是食物,是馬克杯", "成份:馬克杯", "重量:0 公克", "熱量:0 大卡", "今日已攝取熱量(全頻道累計):約 0 大卡"):
+    for part in ("你傳的不是食物,是馬克杯", "成份:馬克杯", "重量:0 公克", "熱量:0 大卡", "你今天已攝取熱量:約 0 大卡"):
         assert part in reply
 
 
@@ -95,13 +95,22 @@ def test_if_the_excel_cannot_be_written_the_photo_is_removed_too(cfg, ledger, mo
     assert list(cfg.photos_dir.glob("*")) == []
 
 
-def test_two_photos_in_a_row_build_on_each_others_total(cfg, ledger):
-    first = run(cfg, ledger, food(calories_kcal=600.0), uploader="小明")
-    second = run(cfg, ledger, food(name="紅茶", calories_kcal=120.0), uploader="小華")
+def test_two_photos_from_one_person_build_on_each_others_total(cfg, ledger):
+    first = run(cfg, ledger, food(calories_kcal=600.0))
+    second = run(cfg, ledger, food(name="紅茶", calories_kcal=120.0))
     assert (first.daily_total, second.daily_total) == (600, 720)
     reply = build_reply([first, second])
-    assert "這則訊息的 2 張照片" in reply and "今日已攝取熱量(全頻道累計):約 720 大卡" in reply
+    assert "這則訊息的 2 張照片" in reply and "你今天已攝取熱量:約 720 大卡" in reply
     assert len(list(cfg.photos_dir.glob("*"))) == 2
+
+
+def test_each_person_sees_only_their_own_total(cfg, ledger):
+    ming = run(cfg, ledger, food(calories_kcal=600.0), uploader="小明", uploader_id="1")
+    hua = run(cfg, ledger, food(name="紅茶", calories_kcal=120.0), uploader="小華", uploader_id="2")
+    ming_again = run(cfg, ledger, food(calories_kcal=100.0), uploader="小明", uploader_id="1")
+    assert (ming.daily_total, hua.daily_total, ming_again.daily_total) == (600, 120, 700)
+    assert "約 120 大卡" in build_reply([hua]).splitlines()[-1]
+    assert "約 700 大卡" in build_reply([ming_again]).splitlines()[-1]
 
 
 def test_evil_food_name_cannot_escape_or_become_a_formula(cfg, ledger):
@@ -114,7 +123,7 @@ def test_evil_food_name_cannot_escape_or_become_a_formula(cfg, ledger):
 
 def test_single_food_reply_has_everything(cfg, ledger):
     text = build_reply([run(cfg, ledger, food())])
-    for part in ("是食物:牛肉麵", "牛肉、麵條", "約 500 公克", "約 650 大卡", "今日已攝取熱量(全頻道累計):約 650 大卡"):
+    for part in ("是食物:牛肉麵", "牛肉、麵條", "約 500 公克", "約 650 大卡", "你今天已攝取熱量:約 650 大卡"):
         assert part in text
 
 

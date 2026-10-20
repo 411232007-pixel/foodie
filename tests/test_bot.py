@@ -83,7 +83,7 @@ def test_an_image_gets_hourglass_then_one_reply_then_hourglass_removed(bot, monk
     msg.remove_reaction.assert_awaited_once()
     assert msg.remove_reaction.await_args.args[0] == "⏳"
     msg.reply.assert_awaited_once()
-    assert "今日已攝取熱量(全頻道累計):約 650 大卡" in msg.reply.await_args.args[0]
+    assert "你今天已攝取熱量:約 650 大卡" in msg.reply.await_args.args[0]
 
 
 def test_reply_pings_only_the_author(bot, monkeypatch):
@@ -100,7 +100,7 @@ def test_photos_are_analysed_strictly_one_at_a_time_across_messages(bot, monkeyp
     state = {"now": 0, "max": 0, "order": []}
     lock = threading.Lock()
 
-    def slow(cfg, ledger, data, uploader, caption, *a, **k):
+    def slow(cfg, ledger, data, uploader, uploader_id, caption, *a, **k):
         with lock:
             state["now"] += 1
             state["max"] = max(state["max"], state["now"])
@@ -127,10 +127,18 @@ def test_photos_are_analysed_strictly_one_at_a_time_across_messages(bot, monkeyp
     assert "3 張照片" in first.reply.await_args.args[0]
 
 
+def test_the_discord_user_id_not_the_display_name_is_what_identifies_the_uploader(bot, monkeypatch):
+    seen = []
+    monkeypatch.setattr(bot_module, "process_image", lambda cfg, ledger, data, name, uid, cap, *a, **k: seen.append((name, uid)) or OK)
+    msg = message([attachment()], author_id=1562019939534110794)
+    run_worker(bot, lambda: bot.on_message(msg))
+    assert seen == [("小明", "1562019939534110794")]
+
+
 # ---- failures never stop the queue --------------------------------------------------------
 
 def test_a_crashing_photo_gets_the_failure_text_and_later_messages_still_work(bot, monkeypatch):
-    def flaky(cfg, ledger, data, uploader, caption, *a, **k):
+    def flaky(cfg, ledger, data, uploader, uploader_id, caption, *a, **k):
         if caption == "boom":
             raise RuntimeError("unexpected")
         return OK
